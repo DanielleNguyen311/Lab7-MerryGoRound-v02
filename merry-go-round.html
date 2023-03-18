@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Lab 7</title>
+<script src="three.js"></script>
+<script src="OrbitControls.js"></script>
+<script src="GLTFLoader.js"></script>
+<script>
+
+"use strict";
+
+let canvas, renderer, scene, camera; // Standard three.js requirements.
+
+let controls;  // An OrbitControls object that is used to implement
+               // rotation of the scene using the mouse.  (It actually rotates
+               // the camera around the scene.)
+
+let animating = false;  // Set to true when an animation is in progress.
+let frameNumber = 0;  // Actually elapsed time in animation, in units of 1/60 second.
+
+let merryGoRound;  // an Object3D, for rotating the whole merry-go-round
+let horseGroup1;   // an Object3D for moving one group of horses up and down
+let horseGroup2;   // an Object3D for moving the other group of horses up and down
+let centre;
+
+/**
+ *  The render function draws the scene.
+ */
+function render() {
+    renderer.render(scene, camera);
+}
+
+
+/**
+ * This function is called by the init() method to create the world. 
+ */
+function createWorld() {
+    
+    renderer.setClearColor("black"); // Background color for scene.
+    scene = new THREE.Scene();
+    
+    // ------------------- Make a camera with viewpoint light ----------------------
+    
+    scene.add(new THREE.AmbientLight(0x202020));  // Add some ambient illumination.
+	// TODO: Add a directional light at position (0,1,0)
+	// TODO: AA a point light to illuminate the merry-go-round from inside
+    camera = new THREE.PerspectiveCamera(30, canvas.width/canvas.height, 0.1, 100);
+    camera.position.z = 30;
+    let light1;  // A light shining from the direction of the camera; moves with the camera.
+    light1 = new THREE.DirectionalLight();
+    light1.position.set(0,0,1);
+
+    //adding light2 - directional light
+    let light2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    light2.position.set(-5,-5,0);
+
+    let light3 = new THREE.DirectionalLight("yellow", 0.4);
+    light3.position.set(10,10,0);
+
+    //spotLight.castShadow = true;
+
+
+    //Adding: purple pointLight shining from below the centre, casting a shadow
+    const pointLight = new THREE.PointLight( 0xdfa6f5, 1);//color, intensity , distance
+    pointLight.position.set( 0, 3, 0 );
+    pointLight.castShadow = true;
+    
+    //Set up shadow properties for the light
+
+
+    scene.add(pointLight);
+    scene.add(light2);
+    scene.add(light3);
+
+    camera.add(light1); // so light will move with camera (which is moved by the OrbitControls)
+    //scene.add(light3);
+    scene.add(camera);
+
+    //------------------- Create the scene's visible objects ----------------------
+
+    let top = new THREE.Mesh(
+        new THREE.CylinderGeometry(10,10,0.4,40,1),//radiusTop, radiusBottom, height, radialSegments, heightSegments
+        new THREE.MeshPhongMaterial({
+            color: "white",
+            specular: 0x7132a8, //purple specular reflectance 
+            shininess: 8
+        })
+    );
+    //clone bottom from top
+    let bottom = top.clone();
+
+    top.translateY(4);
+    bottom.translateY(-4.5);
+
+    //cone texture
+    let textureLoader = new THREE.TextureLoader();
+    let coneTextureMap = textureLoader.load('https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/resul-mentes-DbwYNr8RPbg-unsplash.jpg?v=1678607561125');
+
+    let cone = new THREE.Mesh(   
+        new THREE.ConeGeometry(10,3,40,3),
+        new THREE.MeshPhongMaterial({
+            color: "white",
+            specular: 0x7132a8, //purple specular reflectance 
+            shininess: 8,
+            map: coneTextureMap
+        })
+    );
+    cone.translateY(1.7);
+    top.add(cone);
+    centre = createCentre();
+    centre.translateY(-0.2);
+
+    
+    let pole = new THREE.Object3D();
+
+    //pole texture
+    let poleTextureMap = textureLoader.load('https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/paisley.jpg?v=1678607224229');
+    
+    
+    let pole1 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1,0.1,9,8,3),
+        new THREE.MeshPhongMaterial({
+            color: "white",
+            specular: 0x001111,
+            shininess: 8,
+            map: poleTextureMap
+        
+        })
+    );
+    //pole1.rotation.y = Math.PI/8;
+
+    //Question: how can i clone pole1 in a for loop for 8 poles using rotation Y axis? 
+    for(var i = 0; i < 8; i++)
+    {
+        let pole2 = pole1.clone();
+        pole2.rotation.y = i* Math.PI/4 ;
+        pole2.translateX(9);
+        pole2.translateY(-0.1);
+        pole2.castShadow = true; //default is false
+        pole.add(pole2);
+    }
+
+    //shadow setting : rx and cast
+    
+    centre.receiveShadow = true; //default
+    bottom.receiveShadow = true; //default
+
+    loadTextureFor("https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/pawel-czerwinski-ruJm3dBXCqw-unsplash.jpg?v=1678607701962",top);
+    loadTextureFor("https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/pawel-czerwinski-ruJm3dBXCqw-unsplash.jpg?v=1678607701962",bottom);
+
+
+    merryGoRound = new THREE.Object3D();
+    merryGoRound.add(top);
+    merryGoRound.add(bottom);
+    merryGoRound.add(centre);
+
+    merryGoRound.add(pole);
+
+    scene.add(merryGoRound);
+
+    let loader = new THREE.GLTFLoader();
+    loader.load("Horse.glb", addHorsesToScene);
+
+    //initialize 3DObject for horseGroups
+    horseGroup1 = new THREE.Object3D();
+    horseGroup2 = new THREE.Object3D();
+    
+    merryGoRound.add(horseGroup1);
+    merryGoRound.add(horseGroup2);
+
+    //adding 3 backgrounds 
+    let backgroundTextureMap = textureLoader.load(
+        "https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/kristopher-roller-zepnJQycr4U-unsplash.jpg?v=1678650685514"
+      );
+    let backGround1 = new THREE.Mesh(
+        new THREE.PlaneGeometry(50,40),
+        new THREE.MeshLambertMaterial({
+            color: "grey",//to dim out the back ground 
+            map: backgroundTextureMap,
+        })
+    )
+    let backGround2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(55,45),
+        new THREE.MeshLambertMaterial({
+            color: "white",//to dim out the back ground 
+        })
+    )
+    loadTextureFor("https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/mindaugas-vitkus-ju-dVR1jkmE-unsplash.jpg?v=1678650683785",backGround2);
+
+    let backGround3 = new THREE.Mesh(
+        new THREE.PlaneGeometry(55,45),
+        new THREE.MeshLambertMaterial({
+            color: "grey",//to dim out the back ground 
+        })
+    )
+    loadTextureFor("https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/anders-jilden-5sxQH0ugTaA-unsplash.jpg?v=1678649892266",backGround3);
+
+
+    backGround1.position.set(0,0,-20);
+
+    backGround2.rotateY(Math.PI/2);
+    backGround2.position.set(-25,0,5);
+
+    backGround3.rotateY(-Math.PI/2);
+    backGround3.position.set(25,0,5);
+
+
+
+
+
+    scene.add(backGround1);
+    scene.add(backGround2);
+    scene.add(backGround3);
+
+
+
+
+    // ---- Start loading of textures; they will be applied when they are loaded --------
+
+} // end function createWorld()
+
+//Adding a function to create a diamond centre 
+function createCentre(){//ATTEMPT TO CREATE HEART SHAPE CENTRE BOUNCING UP AND DOWN. FAILED. 
+    
+    let coneTop = new THREE.Mesh( 
+        new THREE.ConeGeometry(2,2,10,10),
+        new THREE.MeshPhongMaterial({
+            color: "white",
+            specular: 0x001100,
+            shininess: 5
+        })
+    );
+    coneTop.translateY(2);
+
+    let coneBottom = new THREE.Mesh( 
+        coneTop.geometry,
+        coneTop.material
+    );
+
+    coneBottom.rotateZ(Math.PI);
+
+    loadTextureFor("https://cdn.glitch.global/66734949-c9f8-4d3f-9969-c55b9e539cfe/3481125.jpg?v=1678604841133",coneTop);
+
+    let centre = new THREE.Object3D();
+    centre.add(coneTop);
+    centre.add(coneBottom);
+
+    centre.translateY(-1);
+    centre.scale.set(1,1.5,1);
+
+    return centre;
+}
+
+
+/**
+ *  This function is called once for each frame of the animation, before
+ *  the render() function is called for that frame.  It updates any
+ *  animated properties.  The value of the global variable frameNumber
+ *  is actually the elapsed time in the animation, in units of 1/60 seconds.
+ */
+function updateForFrame() {
+    merryGoRound.rotation.y -= 0.005;
+
+    centre.rotation.y += 0.05;
+    //centre.rotation.x -= 0.05;
+    //centre.position.z = Math.cos(frameNumber / 10) ;
+    //centre.position.x = 2*Math.cos(frameNumber / 10) ;
+
+    //centre.position.z = 1.5*Math.sin(frameNumber / 25) - 0.1;
+
+    horseGroup1.position.y = 1.5*Math.sin(frameNumber / 25) - 0.1;
+    horseGroup2.position.y = 1.5*-Math.sin(frameNumber / 25) - 0.1;
+}    
+
+// TODO: complete this function : add 8 horses to mgr.
+function addHorsesToScene(dataFromModel) {
+
+   // import {GLTFExporter} from 'GLTFLoader.js';
+   let horse = dataFromModel.scene.children[0];
+   //scale the horse
+   horse.scale.set(.02,0.02,0.02);
+   horse.translateY(-2);
+   //give the horses their normal vectors for change in material 
+   horse.geometry.computeVertexNormals();
+
+    //colors for 2nd horse group
+    let colors = ["Cyan","darkblue","#FFC000","purple"];
+    const textureLoader = new THREE.TextureLoader();
+    let horseTextureMap = textureLoader.load('https://cdn.glitch.global/82df27a4-539a-4aca-9f9b-035e351da713/sean-sinclair-gai1YB3UmDA-unsplash.jpg?v=1678605493315');
+
+    for(var i = 0; i < 8; i++)
+    {
+        let horse1 = horse.clone();
+
+        if(i%2 == 0) // if even, create horse in horse group 1
+        {
+            horse1.rotation.y = i* Math.PI/4 ;
+            horse1.translateX(9);
+            horse1.translateY(-0.1);
+            horse1.material = new THREE.MeshLambertMaterial({
+                map: horseTextureMap
+            })
+            horseGroup1.add(horse1);
+        }
+        if(i%2 == 1) // if odd, create horse in horse group 2
+        {
+            horse1.rotation.y = i* Math.PI/4 ;
+            horse1.translateX(9);
+            horse1.translateY(-0.1);
+            let colorIndex = Math.floor(i/2);
+            horse1.material = new THREE.MeshLambertMaterial({ color: colors[colorIndex]}) ;
+            horseGroup2.add(horse1);
+        }
+        horse1.castShadow = true; //default is false
+    }
+
+}
+/**
+ * Start loading a texture from imageURL.  If additional parameeters are
+ * present, they must be THREE.Object3D's, and the map property of each
+ * object's material is set to the newly loaded texture.  The return
+ * value of the function is the texture, to allow it to be used elsewhere.
+ */
+function loadTextureFor(imageURL, ...objects) {
+    function callback() {
+        for (let object of objects) {
+            object.material.map = texture;
+            object.material.needsUpdate = true;
+        }
+        render();  // render scene with texture that has just been loaded.
+    }
+    let loader = new THREE.TextureLoader();
+    let texture = loader.load(imageURL, callback);
+    return texture;
+}
+
+
+/* ---------------------------- ANIMATION SUPPORT --------------------- */
+
+let previousTime; // time when doFrame was last called
+
+/*  Called when user changes setting of the Animate checkbox. */
+function doAnimateCheckbox() {
+   let run = document.getElementById("animateCheckbox").checked;
+   if (run != animating) {
+       animating = run;
+       if (animating) {
+           previousTime = -1; // for starting or restarting the animation
+           requestAnimationFrame(doFrame);
+       }
+   }
+}
+
+/*  Drives the animation, called by system through requestAnimationFrame() */
+function doFrame() {
+    if (animating) {
+        let time = Date.now();
+        if (previousTime !== -1) {
+            let elapsedTime = (time - previousTime)/1000; // time in seconds since previous frame
+            frameNumber += elapsedTime*60; // elapsed time in units of 1/60 seconds
+            updateForFrame();
+            render();
+        }
+        previousTime = time;
+        requestAnimationFrame(doFrame);
+    }
+}
+
+/*----------------------------- INITIALIZATION ----------------------------------------
+
+/**
+ *  This function is called by the onload event so it will run after the
+ *  page has loaded.  It creates the renderer, canvas, and scene objects,
+ *  calls createWorld() to add objects to the scene, and renders the
+ *  initial view of the scene.  If an error occurs, it is reported.
+ */
+function init() {
+    try {
+        canvas = document.getElementById("glcanvas");
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            alpha: false
+        });
+        //adding shadow map for renderer  
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // default THREE.PCFShadowMap
+    }
+    catch (e) {
+        document.getElementById("message").innerHTML="<b>Sorry, an error occurred:<br>" +
+                e + "</b>";
+        return;
+    }
+    document.getElementById("animateCheckbox").checked = false;
+    document.getElementById("animateCheckbox").onchange = doAnimateCheckbox;
+    document.getElementById("reset").onclick = function() { controls.reset(); };
+    createWorld();
+    controls = new THREE.OrbitControls(camera,canvas);
+    controls.enablePan = false; 
+    controls.enableZoom = false;
+    controls.addEventListener("change", render);
+    render();
+}
+
+window.onload = init;  // arrange for init() to be called when the page loads.
+
+</script>
+</head>
+<body>
+
+<h2>Lab 7</h2>
+
+<noscript>
+   <p style="color: #AA0000; font-weight: bold">Sorry, but this page requires JavaScript!</p>
+</noscript>
+
+<p style="color:#AA0000; font-weight: bold" id="message">
+</p>
+
+<p><b style="margin-left:50px">Use your mouse to rotate the model.</b></p>
+
+<p>
+   <label><input type="checkbox" id="animateCheckbox" style="margin-left:50px"><b>Animate</b></label>
+   <button style="margin-left: 50px" id="reset">Reset Rotation</button>
+</p>
+
+<div id="canvas-holder" style="float: left; background-color: black">
+   <canvas width="1000" height="600" id="glcanvas"></canvas>
+</div>
+
+</body>
+</html>
